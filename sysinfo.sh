@@ -1,36 +1,62 @@
 #!/bin/bash
 
 # System Information
+
 MyHostName=$(hostname)
 MyOS=$(source /etc/os-release && echo "$PRETTY_NAME")
-UpTime=$(uptime -p)
+UpTime=$(uptime)
+
 
 # Hardware Information
 
+# filter CPU output through awk using keyword product followed by 9 fields
+# filter CPUSpeed by greping to case insensitive search for hz so that it catches k or m or ghz
+# filter MaxSpeed to  capture variations of words meaning max
+# filter Ram to only show relevant column in table (TOTAL) field 2
+# filter Disks to only show the name size and model of disk(s) using -o option
+# filer video card info to only show the video card name and filter unnecessary info
+CPU=$(lshw -class processor | awk '/product/ {print $2, $3, $4, $5, $6, $7, $8, $9}')
+CPUspeed=$(lshw -class processor | grep -i "hz")
+MaxSpeed=$(lshw -class processor | grep -iE "Max:|Maximum:|Limit:|Capacity:.*hz")
+RAM=$(free -h | awk '/Mem:/ {print $2}')
+Disks=$(lsblk -o NAME,SIZE,MODEL)
+VideoCard=$(lshw -class display | awk '/product/ {print $2, $3}')
 
-cpu=$(lshw -class processor | awk '/product/ {print $2, $3, $4, $5, $6, $7, $8, $9}')
-cpu_speed=$(lshw -class processor | awk '/size/ {print $1, $2, $3, $4}')
-max_cpu_speed=$(lshw -class processor | awk '/capabilities/ {print $3}' | sed 's/,//')
-ram=$(free -h | awk '/Mem:/ {print $2}')
-disks=$(lsblk -o NAME,SIZE,MODEL | awk '$1 ~ /sd/ {print $2, $3}')
-video=$(lshw -class display | awk '/product/ {print $2, $3}')
 
 # Network Information
-fqdn=$(hostname -f)
-host_address=$(ip a | awk '/inet / && !/127.0.0.1/ {split($2, a, "/"); print a[1]}')
-gateway_ip=$(ip r | awk '/default/ {print $3}')
-dns_server=$(grep 'nameserver' /etc/resolv.conf | awk '{print $2}')
-interface=$(lshw -class network | awk '/logical name/ {print $3}' | head -n 1)
-ip_address=$(ip a show "$interface" | awk '/inet / {split($2, a, "/"); print a[1]}')
+
+# Domain Name  obtaining FQDN using -f option
+# HostIp filtering ip route query to find src ip address and print
+# Gateway selecting only field 3 of output from resolving ip addresses using default as keyword
+# DNS filtering field 2 of keyword nameserver from conf file
+# Interface selecting just the interface name from the printout of items filtered by logical name
+# IPaddress using route finding and awking based on src 
+DomainName=$(hostname -f)
+HostIP=$(ip route get 7.7.7.7 | awk '/src/ {print $7}')
+Gateway=$(ip r | awk '/default/ {print $3}')
+DNS=$(awk '/nameserver/ {print $2}' /etc/resolv.conf)
+Interface=$(lshw -class network | awk '/logical name/ {print $3}')
+IPaddress=$(ip route get 7.7.7.7 | awk '/src/ {print $7}')
+
 
 # System Status
-users=$(who | cut -d' ' -f1 | sort -u | paste -s -d',')
-disk_space=$(df -h | awk '{print $1, $4}' | sed -n '2,$p')
-process_count=$(ps -e | wc -l)
-load_averages=$(uptime | awk -F'load average:' '{print $2}' | awk '{print $1, $2, $3}')
-memory_allocation=$(free -h | awk '/Mem:/ {print "Total:", $2, "Used:", $3, "Free:", $4}')
-listening_ports=$(ss -tln | awk 'NR>1 {print $5}' | awk -F':' '{print $NF}' | sort -u | paste -s -d',')
-ufw_rules=$(sudo ufw status numbered)
+
+# Users get list of user(S) and only cutting out the usernames from the list using
+#    whitespace delimiter and selecting first field
+# DiskSpace human readable option of df, awking only fields 1 & 4
+# ProcessCount using ps -e to list all processes, then pipe to wc-l to count each  newline
+# LoadAverages awking uptime info to separate fields marking load average label, printing
+#      the second field which contains the three average measurements 1m, 5m, 15m
+# MemoryAllocation awking free -h output and organized into labels for each field displayed
+# ListeningPorts list only tcp ports which are listening
+#FirewallRUles using ufw status, and also using option to get the rule numbers listed 
+Users=$(who | cut -d' ' -f1)
+DiskSpace=$(df -h | awk '{print $1, $4}')
+ProcessCount=$(ps -e | wc -l)
+LoadAverages=$(uptime | awk -F'load average:' '{print $2}')
+MemoryAllocation=$(free -h | awk '/Mem:/ {print "Total:", $2, "Used:", $3, "Free:", $4}')
+ListeningPorts=$(ss -tl)
+FirewallRules=$(sudo ufw status numbered)
 
 # Generate Report
 echo "
@@ -44,31 +70,30 @@ Uptime: $UpTime
 
 Hardware Information
 ----------------------
-CPU: $cpu
-Speed: $cpu_speed (Max: $max_cpu_speed)
-RAM: $ram
-Disks: $disks
-Video: $video
+CPU: $CPU
+Speed: $CPUspeed 
+Max CPU Speed: $MaxSpeed
+RAM: $RAM
+Disks: $Disks
+Video: $VideoCard
 
 Network Information
 ---------------------
-FQDN: $fqdn
-Host Address: $host_address
-Gateway IP: $gateway_ip
-DNS Server: $dns_server
+FQDN: $DomainName
+Host Address: $HostIP
+Gateway IP: $Gateway
+DNS Server: $DNS
 
-Interface: $interface
-IP Address: $ip_address
+Interface: $Interface
+IP Address: $IPaddress
 
 System Status
 --------------
-Users Logged In: $users
-Disk Space: $disk_space
-Process Count: $process_count
-Load Averages: $load_averages
-Memory Allocation: $memory_allocation
-Listening Network Ports: $listening_ports
-UFW Rules: $ufw_rules
+Users Logged In: $Users
+Disk Space: $DiskSpace
+Process Count: $ProcessCount
+Load Averages: $LoadAverages
+Memory Allocation: $MemoryAllocation
+Listening Network Ports: $ListeningPorts
+UFW Rules: $FirewallRules
 "
-
-
